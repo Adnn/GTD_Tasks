@@ -1,3 +1,16 @@
+# Secrets
+**/settings_local.py
+**/client_secrets.json
+**/credentials.dat
+
+# Data stores
+**/mycache.txt
+*.sqlite3
+
+# OS X and Vim
+*.swp
+.DS_Store
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

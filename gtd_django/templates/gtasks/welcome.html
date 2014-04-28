@@ -1,0 +1,17 @@
+
+<html>
+  <head>
+    <title>Your Google Tasks</title>
+    <style type=text/css>
+      td  { vertical-align: top; padding: 0.5em }
+      img { border:0 }
+    </style>
+  </head>
+  <body>
+    <table border=1>
+      {% for item in tasklists_col %}
+      <tr><td>{{ item.value|safe }}</td></tr>
+      {% endfor %}
+    </table>
+  </body>
+</html>
