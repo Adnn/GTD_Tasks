@@ -1,3 +1,5 @@
+# -*- coding: utf-8 -*-
+
 from __future__ import print_function
 
 import json
@@ -177,6 +179,7 @@ class Tasklist(DictionaryAsMember):
 class Task(DictionaryAsMember):
     def __init__(self, task_dict, tasklist):
         self.value = task_dict
+# \todo change name to parent_tasklist
         self.parent = tasklist
 
     def __unicode__(self):
@@ -272,8 +275,12 @@ def _assign_children(lookup_task_dict):
                                         for child_position
                                             in sorted(pair[u'children'].iterkeys())]:
         if gtd_item != 'ignored':
-            logging.debug(u"Adding {0} as a child to {1}".format(child_task_id, gtd_item))
-            gtd_item.add_child(lookup_task_dict[child_task_id][u'item'])
+            # It is possible that an entry was removed from the lookup table
+            # (eg. incorrect format), in which case it was not removed from the parent
+            # child list
+            if child_task_id in lookup_task_dict:
+                logging.debug(u"Adding {0} as a child to {1}".format(child_task_id, gtd_item))
+                gtd_item.add_child(lookup_task_dict[child_task_id][u'item'])
  
 
 def get_model_from_gtasks(tasklists_collection):
@@ -288,6 +295,13 @@ def get_model_from_gtasks(tasklists_collection):
             except NoCategoryException:
                 logging.info(u"The task has no category, ignoring it.")
                 del lookup[task_id]
+                if task_id in roots:
+                    roots.remove(task_id)
+# \todo could be logically cleaner to remove the task_id from it parent here
+                #parent_task_id = tasklist.container[task_id].value['parent']
+                #if parent_task_id:
+                #    lookup[parent_task_id][children] . . .
+
 #                lookup[task_id]['item'] = 'ignored'
 
         _assign_children(lookup)
