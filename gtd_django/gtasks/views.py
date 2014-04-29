@@ -1,9 +1,12 @@
+# -*- coding: utf-8 -*-
+
 import os
 import logging
 import httplib2
 
 from gtd_tasks import tasks_datamodel
 from gtd_tasks import visitors
+from gtd_tasks.gtd_model import Recipient 
 
 from apiclient.discovery import build
 from django.contrib.auth.decorators import login_required
@@ -43,13 +46,19 @@ def index(request):
     http = httplib2.Http()
     http = credential.authorize(http)
     tasks_service = build("tasks", "v1", http=http)
-    gtd_item_list = tasks_datamodel.get_model_from_gtasks \
-      (tasks_datamodel.FileBackedService(tasks_service, 'mycache.txt'))
+
+    tasklists_collection =  \
+        tasks_datamodel.TasklistsCollection(tasks_datamodel.FileBackedService(tasks_service, 'mycache.txt'))
+    gtd_item_list = tasks_datamodel.get_model_from_gtasks(tasklists_collection)
 
     next_lister = visitors.ListNextActions()
     next_lister.visit(gtd_item_list)
+
+    result = visitors.FilterSet(gtd_item_list).filter(visitors.ListNextActions()).filter(visitors.Addresse(Recipient(u"xn")))
+
     return render_to_response('gtasks/welcome.html', {
-                'tasklists_col': next_lister.next_actions,
+                #'tasklists_col': next_lister.next_actions,
+                'tasklists_col': result.collection,
                 })
 
 
