@@ -93,7 +93,7 @@ class FileBackedService(object):
                     #first time in the body of the while
                     payload.update(tasks_col_doc)
                 else:
-                    payload['items'].update(tasks_col_doc['items'])
+                    payload['items'].extend(tasks_col_doc['items'])
                 request = tasks.list_next(request, tasks_col_doc)
 
                 with open(self.filepath, 'w') as outdatafile:
