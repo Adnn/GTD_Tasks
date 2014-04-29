@@ -79,6 +79,10 @@ class PrettyPrinter(Visitor):
                                                       tags = str(member_list).decode('utf-8'),
                                                       plural=(u'S' if len(member_list)>1 else u'')))
 
+    @dispatch.register(Item)
+    def visit(self, visitee):
+        visitee.traverse(self)
+    
     @dispatch.register(GtdItem)
     def visit(self, item):
         self.__indent()

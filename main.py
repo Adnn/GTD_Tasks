@@ -82,33 +82,37 @@ def authorization_procedure(flags=None):
   return credentials.authorize(http)
 
 def main(argv):
-  # Parse the command-line flags.
-  parser.add_argument('--log', type=str, help="Log level", default='WARNING')
-  flags = parser.parse_args(argv[1:])
-  http = authorization_procedure(flags)
+    # Parse the command-line flags.
+    parser.add_argument('--log', type=str, help="Log level", default='WARNING')
+    flags = parser.parse_args(argv[1:])
+    http = authorization_procedure(flags)
 
-  numeric_log_level = getattr(logging, flags.log.upper(), None)
-  if not isinstance(numeric_log_level, int):
-    raise ValueError('Invalid log level: %s' % loglevel)
-  logging.basicConfig(level=numeric_log_level, format='%(asctime)s %(message)s')
-  # Construct the service object for the interacting with the Tasks API.
-  task_service = discovery.build('tasks', 'v1', http=http)
+    numeric_log_level = getattr(logging, flags.log.upper(), None)
+    if not isinstance(numeric_log_level, int):
+      raise ValueError('Invalid log level: %s' % loglevel)
+    logging.basicConfig(level=numeric_log_level, format='%(asctime)s %(message)s')
 
-  try:
-    gtd_item_list = tasks_datamodel.get_model_from_gtasks(tasks_datamodel.FileBackedService(task_service, 'mycache.txt'))
-    for item in gtd_item_list:
-        item.pretty_print()
+    # Construct the service object for the interacting with the Tasks API.
+    task_service = discovery.build('tasks', 'v1', http=http)
+    logging.debug("request returned")
 
-#    next_actions_visitor = tasks_datamodel.ListNextActions()
-#    next_actions_visitor.visit(gtd_item_list) 
-#    print(next_actions_visitor)
-    
+    try:
+        #Populate the google data layer objects
+        tasklists_collection =  \
+            TasklistsCollection(tasks_datamodel.FileBackedService(task_service, 'mycache.txt'))
+    except client.AccessTokenRefreshError:
+        print ("The credentials have been revoked or expired, please re-run"
+               "the application to re-authorize")
+        return
+
+    gtd_item_list = tasks_datamodel.get_model_from_gtasks(tasklists_collection)
+
+#     next_actions_visitor = tasks_datamodel.ListNextActions()
+#     next_actions_visitor.visit(gtd_item_list) 
+#     print(next_actions_visitor)
+      
     pretty_printer = visitors.PrettyPrinter()
     pretty_printer.visit(gtd_item_list)
-
-  except client.AccessTokenRefreshError:
-    print ("The credentials have been revoked or expired, please re-run"
-      "the application to re-authorize")
 
 
 # For more information on the Tasks API you can visit:

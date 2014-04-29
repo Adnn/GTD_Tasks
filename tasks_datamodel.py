@@ -5,7 +5,7 @@ import logging
 import os
 import re
 
-from gtd_model import GtdItem, NextAction, Project, Tag, Plane, Recipient
+from gtd_model import Item, GtdItem, NextAction, Project, Tag, Plane, Recipient
 
 cb = lambda response: print (u'STATUS: {0}({1}). From cache : {2}'.format(response.status, response.reason, response.fromcache))
 
@@ -43,35 +43,48 @@ class FileBackedService(object):
                 logging.info("File cache was not readable, starts with empty cache.")
                 self.cache_dictionary = {}
 
-    def get(self, key_path):
-        found = reduce(lambda dictionary, key: dictionary.get(key,{}), '/'.split(key_path), self.dictionary)
-        found if found else None
-
-    def set(self, key_path, value):
-        keys = '/'.split(key_path)
-        place = reduce(lambda dictionary, key: dictionary.setdefault(key,{}), keys[:-1], self.dictionary)
-        place[keys[-1:]] = value
+#    def get(self, key_path):
+#        found = reduce(lambda dictionary, key: dictionary.get(key,{}), '/'.split(key_path), self.dictionary)
+#        found if found else None
+#
+#    def set(self, key_path, value):
+#        keys = '/'.split(key_path)
+#        place = reduce(lambda dictionary, key: dictionary.setdefault(key,{}), keys[:-1], self.dictionary)
+#        place[keys[-1:]] = value
 
     def gen_tasklists(self):
         # \todo Check the ETAG to see if its usefull to go through the loop
         # perhaps it will also save us the pagination ?
         tasklists = self.service.tasklists()
-        request = tasklists.list()
-        # { 'id': {'updated': last_modification_time, 'payload': json}, ... }
+        request = tasklists.list(fields="items/id, items/updated, items/title")
+        #request = tasklists.list()
+        # {
+        #     'id': {
+        #         'updated': last_modification_time,
+        #         'payload': json
+        #     },
+        #     ...
+        # }
         cache_swap_dict = {}
         tasklists_col = []
+
         while (request != None):
             tasklists_col_doc = request.execute()
+            logging.debug("request returned")
+
             for item_dict in tasklists_col_doc['items']:
                 key_id = item_dict['id']
                 #If the value in the cache is up to date, keep it
                 cached_date = self.cache_dictionary.get(key_id, {}).get('updated', None)
+
                 if cached_date == item_dict['updated']:
-                    logging.info("tasklist {0} up to date. Both: {1}".format(key_id, cached_date))
+                    logging.info("tasklist {0} up to date. Both: {1}".format(key_id,
+                                                                             cached_date))
                     cache_swap_dict[key_id] = self.cache_dictionary[key_id]
                 else:
                     logging.info("tasklist {0} not up to date. Cached: {1}, online: {2}".format(key_id, cached_date, item_dict['updated']))
                     cache_swap_dict[key_id] = {'updated': item_dict['updated'], 'payload': {}}
+
                 #And populate a collection of tasklists
                 tasklists_col.append(item_dict)
             request = tasklists.list_next(request, tasklists_col_doc)
@@ -89,6 +102,7 @@ class FileBackedService(object):
             request = tasks.list(tasklist=tasklist_id)
             while (request != None):
                 tasks_col_doc = request.execute()
+                logging.debug("request returned")
                 if not payload:
                     #first time in the body of the while
                     payload.update(tasks_col_doc)
@@ -231,15 +245,19 @@ def _set_default(lookup_dict, task_id):
 def is_blank(task):
     return not bool(task.title.strip())
 
-def get_model_from_gtasks(service):
-    #Populate the google data layer objects
-    tasklists_collection = TasklistsCollection(service)
-
-    root_items_list = GtdItem('',  '', False)
+def get_model_from_gtasks(tasklists_collection):
+    root_items_list = Item()
 
     for tasklist in tasklists_collection:
         #Populate the lookup table
-        # format: {task_id: {'item':gtd_item, 'children':{child_position: child_task_id, ...}}, ...}
+        # FORMAT
+        # {
+        #     task_id: {
+        #         'item':gtd_item,
+        #         'children': {child_position: child_task_id, ...}
+        #     },
+        #     ...
+        # }
         lookup_task_dict = {}
         for task_id, task in [(task_id, task) for task_id, task in tasklist.iteritems()
                                               if not is_blank(task)]:
@@ -254,23 +272,23 @@ def get_model_from_gtasks(service):
                 _set_default(lookup_task_dict, task_id)['item'] = 'ignored'
                 continue
             if u'parent' in task.value:
-                _set_default(lookup_task_dict, task.value['parent'])[u'children'].update({task.position:task_id})
+                # Nb: there is a conflicting parent attribute in task
+                _set_default(lookup_task_dict, task.value['parent'])[u'children'] \
+                    .update({task.position: task_id})
             else:
                 #If the item has no parent, it is top level in the current context
                 logging.info(u"The task is a parent item.")
                 root_items_list.add_child(lookup_task_dict[task_id][u'item'])
 
-            for task_value in lookup_task_dict.itervalues():
-                if task_value['item'] is None:
-                    pass
-
         #Populate each item children, based on the lookup table
         logging.info(u"Populate each item children")
         for gtd_item, child_task_id in [(pair[u'item'], pair[u'children'][child_position])
                                             for pair in lookup_task_dict.itervalues()
-                                            for child_position in sorted(pair[u'children'].iterkeys())]:
+                                            for child_position
+                                                in sorted(pair[u'children'].iterkeys())]:
             if gtd_item != 'ignored':
                 logging.debug(u"Adding {0} as a child to {1}".format(child_task_id, gtd_item))
                 gtd_item.add_child(lookup_task_dict[child_task_id][u'item'])
 
     return root_items_list
+    pass 
