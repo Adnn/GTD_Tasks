@@ -2,20 +2,9 @@
 ## GTD logical view
 ##
 
-
-class GtdItem(object):
-    def __init__(self, value, category, completed,
-                 due_date=None, recipient=None):
-        self.completed = completed
-        self.value = value
-        self.category = category
-        self.due_date = due_date
+class Item(object):
+    def __init__(self):
         self.children = []
-        self.tag_list = []
-
-        #There should be only one plane and recipient on an item, set this way to gracefully catch data layer errors
-        self.plane_list = []
-        self.recipient_list = recipient
 
     def add_child(self, child):
         self.children.append(child)
@@ -26,6 +15,22 @@ class GtdItem(object):
 
     def __iter__(self):
         return iter(self.children)
+
+
+
+class GtdItem(Item):
+    def __init__(self, value, category, completed,
+                 due_date=None, recipient=[]):
+        super(GtdItem, self).__init__()
+        self.completed = completed
+        self.value = value
+        self.category = category
+        self.due_date = due_date
+        self.tag_list = []
+
+        #There should be only one plane and recipient on an item, set this way to gracefully catch data layer errors
+        self.plane_list = []
+        self.recipient_list = recipient
 
     def __repr__(self):
         return u"[{category}] {value}".format(category=self.category, value=self.value)
@@ -40,6 +45,7 @@ class GtdItem(object):
 
     def append_tag(self, tag):
         self.tag_list.append(tag)
+
 
 
 class NextAction(GtdItem):
@@ -67,6 +73,12 @@ class SimpleValue(object):
 
     def __str__(self):
         return self.name.encode('utf-8')
+
+    def __eq__(self, other):
+        return self.name == other.name
+
+    def __ne__(self, other):
+        return not self.__eq__(other)
 
 
 class Tag(SimpleValue):

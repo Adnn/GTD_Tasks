@@ -1,4 +1,4 @@
-from gtd_model import GtdItem, NextAction, Project, Tag, Plane, Recipient
+from gtd_model import GtdItem, Item, NextAction, Project, Tag, Plane, Recipient
 
 import inspect
 import sys
@@ -43,20 +43,23 @@ class ListNextActions(Visitor):
     dispatch = MultiMethod()
 
     def __init__(self):
-        self.next_actions = []
+        self.next_actions = Item() 
 
-    @dispatch.register(GtdItem)
+    @dispatch.register(Item)
     def visit(self, visitee):
         visitee.traverse(self)
 
 
     @dispatch.register(NextAction)
     def visit(self, visitee):
-        self.next_actions.append(visitee)
+        self.next_actions.add_child(visitee)
         visitee.traverse(self)
 
     def __repr__(self):
         return str(self.next_actions)
+
+    def result(self):
+        return self.next_actions
         
 class PrettyPrinter(Visitor):
     dispatch = MultiMethod()
@@ -87,4 +90,32 @@ class PrettyPrinter(Visitor):
         self.indent_level += 1
         item.traverse(self)
         self.indent_level -= 1
+
+class Addresse(Visitor):
+    dispatch = MultiMethod()
+
+    def __init__(self, addressee):
+        self.addressee = addressee
+        self.result_ = Item()
+
+    @dispatch.register(Item)
+    def visit(self, visitee):
+        visitee.traverse(self)
+
+    @dispatch.register(GtdItem)
+    def visit(self, visitee):
+        if self.addressee in visitee.recipient_list:
+            self.result_.add_child(visitee)
+
+    def result(self):
+        return self.result_
+        
+class FilterSet(object):
+
+    def __init__(self, visitable):
+        self.collection = visitable
+
+    def filter(self, visitor):
+        visitor.visit(self.collection) 
+        return FilterSet(visitor.result())
 
