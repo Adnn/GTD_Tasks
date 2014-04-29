@@ -1,22 +1,8 @@
+from common_model import Item
+
 ##
 ## GTD logical view
 ##
-
-class Item(object):
-    def __init__(self):
-        self.children = []
-
-    def add_child(self, child):
-        self.children.append(child)
-
-    def traverse(self, visitor):
-        for child in self:
-            visitor.visit(child)
-
-    def __iter__(self):
-        return iter(self.children)
-
-
 
 class GtdItem(Item):
     def __init__(self, value, category, completed,

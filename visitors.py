@@ -1,4 +1,5 @@
-from gtd_model import GtdItem, Item, NextAction, Project, Tag, Plane, Recipient
+from common_model import Item, RawValueItem
+from gtd_model import GtdItem, NextAction, Project, Tag, Plane, Recipient
 
 import inspect
 import sys
@@ -28,7 +29,7 @@ class MultiMethod(object):
         for curr_type in inspect.getmro(arg_type):
             if curr_type in self._implementations:
                 return self._implementations[curr_type]
-        raise KeyError
+        raise KeyError("Key {0}".format(arg_type.__name__))
 
     def __call__(self, *args):
         return self._get_method(type(args[1]))(*args)

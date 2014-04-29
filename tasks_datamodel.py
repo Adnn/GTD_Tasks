@@ -6,23 +6,9 @@ import os
 import re
 
 from gtd_model import Item, GtdItem, NextAction, Project, Tag, Plane, Recipient
+from common_model import RawValueItem
 
 cb = lambda response: print (u'STATUS: {0}({1}). From cache : {2}'.format(response.status, response.reason, response.fromcache))
-
-##
-## Cache
-##
-#class FileDataStore(object):
-#    def __init__(self, directory)
-#        if not os.path.exists(directory):
-#            os.makedires(directory)
-#        self.directory = directory
-#
-#    def load():
-#        data_file = open('datafile')
-#    
-#       
-#     
 
 ##
 ## Service Providers
@@ -199,9 +185,6 @@ class Task(DictionaryAsMember):
     def __str__(self):
         return unicode(self).encode('utf-8')
 
-#    def __repr__(self):
-#        return str(self)
-
 ##
 ## gTask to GTD adapters
 ##
@@ -242,53 +225,123 @@ def construct_gtd_item(task):
 def _set_default(lookup_dict, task_id):
     return lookup_dict.setdefault(task_id, {u'item':None, u'children':{}})
     
-def is_blank(task):
+
+def _is_blank(task):
     return not bool(task.title.strip())
 
-def get_model_from_gtasks(tasklists_collection):
-    root_items_list = Item()
 
+def _populate_lookup(tasklist):
+    """ LOOKUP TABLE FORMAT
+     {
+         task_id: {
+             'item':RawValueItem,
+             'children': {child_position: child_task_id, ...}
+         },
+         ...
+     }
+    
+    Deprecated: Special 'item' value "ignored" is reserved to prevent children assignements
+    """
+
+    lookup_task_dict = {}
+    root_taskids = []
+
+    for task_id, task in [(task_id, task) for task_id, task in tasklist.iteritems()
+                                          if not _is_blank(task)]:
+        logging.debug(u"Taskid: {0}, Task:{1}".format(task_id, task))
+
+        _set_default(lookup_task_dict, task_id)[u'item'] = RawValueItem(task)
+
+        if u'parent' in task.value:
+            # Nb: there is a conflicting parent attribute in task.
+            # DO NOT USE task.parent
+            _set_default(lookup_task_dict, task.value['parent'])[u'children'] \
+                .update({task.position: task_id})
+        else:
+            #If the item has no parent, it is top level in the current context
+            logging.info(u"The task is a parent item.")
+            root_taskids.append(task_id)
+
+    return lookup_task_dict, root_taskids
+
+
+def _assign_children(lookup_task_dict):
+    """ Actually set items children, based on the lookup table """
+    for gtd_item, child_task_id in [(pair[u'item'], pair[u'children'][child_position])
+                                        for pair in lookup_task_dict.itervalues()
+                                        for child_position
+                                            in sorted(pair[u'children'].iterkeys())]:
+        if gtd_item != 'ignored':
+            logging.debug(u"Adding {0} as a child to {1}".format(child_task_id, gtd_item))
+            gtd_item.add_child(lookup_task_dict[child_task_id][u'item'])
+ 
+
+def get_model_from_gtasks(tasklists_collection):
+    root_items = Item()
     for tasklist in tasklists_collection:
-        #Populate the lookup table
-        # FORMAT
-        # {
-        #     task_id: {
-        #         'item':gtd_item,
-        #         'children': {child_position: child_task_id, ...}
-        #     },
-        #     ...
-        # }
-        lookup_task_dict = {}
-        for task_id, task in [(task_id, task) for task_id, task in tasklist.iteritems()
-                                              if not is_blank(task)]:
-            logging.debug(u"Taskid: {0}, Task:{1}".format(task_id, task))
+        lookup, roots = _populate_lookup(tasklist)
+
+        # Transform the RawValueItems into more specialized items.
+        for task_id, item in [(task_id, pair['item']) for task_id, pair in lookup.iteritems()]:
             try:                                    
-                # the temporary variable is just in case there is an excpetion
-                # we do not want to call set_default
-                gtd_item = construct_gtd_item(task)
-                _set_default(lookup_task_dict, task_id)[u'item'] = gtd_item
+                lookup[task_id]['item'] = construct_gtd_item(item.rawvalue)
             except NoCategoryException:
                 logging.info(u"The task has no category, ignoring it.")
-                _set_default(lookup_task_dict, task_id)['item'] = 'ignored'
-                continue
-            if u'parent' in task.value:
-                # Nb: there is a conflicting parent attribute in task
-                _set_default(lookup_task_dict, task.value['parent'])[u'children'] \
-                    .update({task.position: task_id})
-            else:
-                #If the item has no parent, it is top level in the current context
-                logging.info(u"The task is a parent item.")
-                root_items_list.add_child(lookup_task_dict[task_id][u'item'])
+                del lookup[task_id]
+#                lookup[task_id]['item'] = 'ignored'
 
-        #Populate each item children, based on the lookup table
-        logging.info(u"Populate each item children")
-        for gtd_item, child_task_id in [(pair[u'item'], pair[u'children'][child_position])
-                                            for pair in lookup_task_dict.itervalues()
-                                            for child_position
-                                                in sorted(pair[u'children'].iterkeys())]:
-            if gtd_item != 'ignored':
-                logging.debug(u"Adding {0} as a child to {1}".format(child_task_id, gtd_item))
-                gtd_item.add_child(lookup_task_dict[child_task_id][u'item'])
+        _assign_children(lookup)
 
-    return root_items_list
+        map(lambda root_id: root_items.add_child(lookup[root_id]['item']), roots)
+
+    return root_items
+
+#def get_model_from_gtasks(tasklists_collection):
+#    root_items_list = Item()
+#
+#    for tasklist in tasklists_collection:
+#        # LOOKUP TABLE FORMAT
+#        # {
+#        #     task_id: {
+#        #         'item':gtd_item,
+#        #         'children': {child_position: child_task_id, ...}
+#        #     },
+#        #     ...
+#        # }
+#        lookup_task_dict = {}
+#
+#        # Populate the lookup_task_dict
+#        for task_id, task in [(task_id, task) for task_id, task in tasklist.iteritems()
+#                                              if not _is_blank(task)]:
+#            logging.debug(u"Taskid: {0}, Task:{1}".format(task_id, task))
+#            try:                                    
+#                # the temporary variable is just in case there is an excpetion
+#                # we do not want to call set_default
+#                gtd_item = construct_gtd_item(task)
+#                _set_default(lookup_task_dict, task_id)[u'item'] = gtd_item
+#            except NoCategoryException:
+#                logging.info(u"The task has no category, ignoring it.")
+#                _set_default(lookup_task_dict, task_id)['item'] = 'ignored'
+#                continue
+#            if u'parent' in task.value:
+#                # Nb: there is a conflicting parent attribute in task
+#                _set_default(lookup_task_dict, task.value['parent'])[u'children'] \
+#                    .update({task.position: task_id})
+#            else:
+#                #If the item has no parent, it is top level in the current context
+#                logging.info(u"The task is a parent item.")
+#                root_items_list.add_child(lookup_task_dict[task_id][u'item'])
+#
+#        # Actually set items children, based on the lookup table
+#        for gtd_item, child_task_id in [(pair[u'item'], pair[u'children'][child_position])
+#                                            for pair in lookup_task_dict.itervalues()
+#                                            for child_position
+#                                                in sorted(pair[u'children'].iterkeys())]:
+#            if gtd_item != 'ignored':
+#                logging.debug(u"Adding {0} as a child to {1}".format(child_task_id, gtd_item))
+#                gtd_item.add_child(lookup_task_dict[child_task_id][u'item'])
+#
+#    return root_items_list
+
+def get_documentation_from_gtasks(tasklists_collection):
     pass 
