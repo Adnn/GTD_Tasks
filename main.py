@@ -106,6 +106,7 @@ def main(argv):
         return
 
     gtd_item_list = tasks_datamodel.get_model_from_gtasks(tasklists_collection)
+    documentation = tasks_datamodel.get_documentation_from_gtasks(tasklists_collection)
 
 #     next_actions_visitor = tasks_datamodel.ListNextActions()
 #     next_actions_visitor.visit(gtd_item_list) 

@@ -9,6 +9,7 @@ import re
 
 from gtd_model import Item, GtdItem, NextAction, Project, Tag, Plane, Recipient
 from common_model import RawValueItem
+from visitors import Visitor
 
 cb = lambda response: print (u'STATUS: {0}({1}). From cache : {2}'.format(response.status, response.reason, response.fromcache))
 
@@ -143,7 +144,17 @@ class TasklistsCollection(object):
         self.container = {}
 
         for tasklist_dict in service.gen_tasklists():
-            self.container[tasklist_dict['id']] = Tasklist(service, tasklist_dict)
+            self.container[tasklist_dict['title']] = Tasklist(service, tasklist_dict)
+
+    # Return a list of tuples : [(MatchObject, Tasklist), ...]
+    def get_lists_for_regex(self, regex):
+        result = []
+        pattern = re.compile(regex)
+        for title, tasklist in self.container.iteritems():
+            match = pattern.match(title)
+            if match:
+                result.append((match, tasklist))
+        return result
 
     def __iter__(self):
         return self.container.itervalues()
@@ -202,14 +213,23 @@ def _extract_element(value_capturing_pattern, element_ctor, text):
     elements = [element_ctor(value) for value in re.findall(value_capturing_pattern, text)]
     return elements, re.sub(value_capturing_pattern, '', text)
 
+def _extract_recipients(text):
+    return _extract_element('\<(.*?)\>', Recipient, text) 
+
+def _extract_planes(text):
+    return _extract_element('\[(.*?)\]', Plane, text)
+
+def _extract_tags(text):
+    return _extract_element('\{(.*?)\}', Tag, text)
+
 def construct_gtd_item(task):
     category, sep, task_text = task.title.partition(':')
     if not task_text:
         raise NoCategoryException(u"Item: {0}".format(task.title))
 
-    tags, task_text = _extract_element('\{(.*?)\}', Tag, task_text)
-    planes, task_text = _extract_element('\((.*?)\)', Plane, task_text)
-    recipients, task_text = _extract_element('\<(.*?)\>', Recipient, task_text)
+    tags, task_text = _extract_tags(task_text)
+    planes, task_text = _extract_planes(task_text)
+    recipients, task_text = _extract_recipients(task_text)
 
     task_text = re.sub('\s+', ' ', task_text).strip()
 
@@ -284,7 +304,7 @@ def _assign_children(lookup_task_dict):
  
 
 def get_model_from_gtasks(tasklists_collection):
-    root_items = Item()
+    root_item = Item()
     for tasklist in tasklists_collection:
         lookup, roots = _populate_lookup(tasklist)
 
@@ -306,56 +326,54 @@ def get_model_from_gtasks(tasklists_collection):
 
         _assign_children(lookup)
 
-        map(lambda root_id: root_items.add_child(lookup[root_id]['item']), roots)
+        map(lambda root_id: root_item.add_child(lookup[root_id]['item']), roots)
 
-    return root_items
+    return root_item
 
-#def get_model_from_gtasks(tasklists_collection):
-#    root_items_list = Item()
-#
-#    for tasklist in tasklists_collection:
-#        # LOOKUP TABLE FORMAT
-#        # {
-#        #     task_id: {
-#        #         'item':gtd_item,
-#        #         'children': {child_position: child_task_id, ...}
-#        #     },
-#        #     ...
-#        # }
-#        lookup_task_dict = {}
-#
-#        # Populate the lookup_task_dict
-#        for task_id, task in [(task_id, task) for task_id, task in tasklist.iteritems()
-#                                              if not _is_blank(task)]:
-#            logging.debug(u"Taskid: {0}, Task:{1}".format(task_id, task))
-#            try:                                    
-#                # the temporary variable is just in case there is an excpetion
-#                # we do not want to call set_default
-#                gtd_item = construct_gtd_item(task)
-#                _set_default(lookup_task_dict, task_id)[u'item'] = gtd_item
-#            except NoCategoryException:
-#                logging.info(u"The task has no category, ignoring it.")
-#                _set_default(lookup_task_dict, task_id)['item'] = 'ignored'
-#                continue
-#            if u'parent' in task.value:
-#                # Nb: there is a conflicting parent attribute in task
-#                _set_default(lookup_task_dict, task.value['parent'])[u'children'] \
-#                    .update({task.position: task_id})
-#            else:
-#                #If the item has no parent, it is top level in the current context
-#                logging.info(u"The task is a parent item.")
-#                root_items_list.add_child(lookup_task_dict[task_id][u'item'])
-#
-#        # Actually set items children, based on the lookup table
-#        for gtd_item, child_task_id in [(pair[u'item'], pair[u'children'][child_position])
-#                                            for pair in lookup_task_dict.itervalues()
-#                                            for child_position
-#                                                in sorted(pair[u'children'].iterkeys())]:
-#            if gtd_item != 'ignored':
-#                logging.debug(u"Adding {0} as a child to {1}".format(child_task_id, gtd_item))
-#                gtd_item.add_child(lookup_task_dict[child_task_id][u'item'])
-#
-#    return root_items_list
+def _pairxtractor(pair):
+    return (pair[0][0], pair[1])
+
+def _doc_elements(item, key, dictionary, extraction_function):
+
+    if item.rawvalue.title == key:
+        item.iterate(lambda child: 
+            dictionary.setdefault(key, []).append(_pairxtractor(extraction_function(child.rawvalue.title))))
 
 def get_documentation_from_gtasks(tasklists_collection):
-    pass 
+    result = {}
+    filter_list = tasklists_collection.get_lists_for_regex("^## Doc$")
+    logging.debug(u"Found {0} documentation tasklist.".format(len(filter_list)))
+
+    if not filter_list:
+        return result
+
+    documentation_list = filter_list[0][1]
+    lookup, roots = _populate_lookup(documentation_list)
+    _assign_children(lookup)
+
+    class TagVisitor(Visitor):
+        def __init__(self, output_array):
+            self.output_array = output_array
+            self.parent_tag = None
+
+        def visit(self, visitee):
+            tag, description = _pairxtractor(_extract_tags(visitee.rawvalue.title))
+            if self.parent_tag:
+                tag.parent = self.parent_tag
+
+            self.output_array.append(tag)
+
+            self_parent = self.parent_tag
+            self.parent_tag = tag 
+            visitee.traverse(self) 
+            self.parent_tag = self_parent
+
+    for item in [lookup[task_id]['item'] for task_id in roots] :
+        _doc_elements(item, 'Interlocutors', result, _extract_recipients)
+        _doc_elements(item, 'Planes', result, _extract_planes)
+        if item.rawvalue.title == 'Tags':
+            tag_visitor = TagVisitor(result.setdefault('Tags', []))
+            item.traverse(tag_visitor)
+
+    print(result)
+    return result

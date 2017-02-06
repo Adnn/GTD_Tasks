@@ -6,6 +6,8 @@ import os
 urlpatterns = patterns('',
     # Example:
     (r'^$', 'gtasks.views.index'),
+#    (r'^projects/$', 'gtasks.views.projects'),
+    (r'^actions/$', 'gtasks.views.next_actions'),
     (r'^oauth2callback', 'gtasks.views.auth_return'),
 
     # Uncomment the admin/doc line below and add 'django.contrib.admindocs'

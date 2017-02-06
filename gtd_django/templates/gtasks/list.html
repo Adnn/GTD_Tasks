@@ -1,0 +1,23 @@
+<html>
+  <head>
+    <title>{{ title }}</title>
+    <style type=text/css>
+      td  { vertical-align: top; padding: 0.5em }
+      img { border:0 }
+    </style>
+  </head>
+  <body>
+    <div>
+        <form action="/gtasks/actions/" method="post">{% csrf_token %}
+            <div>{{ interlocutor_form.as_p }}</div>
+            <div>{{ plane_form.as_p }}</div>
+            <input type="submit" value="Filter">
+        </form>
+    </div>
+    <table border=1>
+      {% for item in tasklists_col %}
+      <tr><td>{{ item.value|safe }}</td></tr>
+      {% endfor %}
+    </table>
+  </body>
+</html>

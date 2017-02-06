@@ -72,6 +72,15 @@ class Tag(SimpleValue):
         super(Tag, self).__init__(tag_name)
         self.parent = parent
 
+    def statisfies(self, tag):
+        if tag.name == self.name:
+            return True 
+        elif tag.parent is not None:
+            return self.parent.satisfies(tag)
+        return false
+
+    def __repr__(self):
+        return u"{0}{1}".format(self.name, u":"+repr(self.parent) if self.parent else u"").encode('utf-8')
 
 class Plane(SimpleValue):
     pass
